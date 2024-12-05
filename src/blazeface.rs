@@ -1,12 +1,10 @@
-use std::sync::Arc;
-
 use image::{
     imageops::{self, FilterType},
     GenericImageView, ImageBuffer, Pixel, Rgb,
 };
 use itertools::Itertools;
-use ndarray::{Array3, ArrayViewD, Axis, CowArray};
-use ort::{tensor::OrtOwnedTensor, Value};
+use ndarray::{Array3, ArrayViewD, Axis};
+use ort::{inputs, session::Session, value::Value};
 
 use crate::{
     detection::{FaceDetector, RustFacesResult},
@@ -82,26 +80,12 @@ impl Default for BlazeFaceParams {
 }
 
 pub struct BlazeFace {
-    session: ort::Session,
+    session: Session,
     params: BlazeFaceParams,
 }
 
 impl BlazeFace {
-    pub fn from_file(
-        env: Arc<ort::Environment>,
-        model_path: &str,
-        params: BlazeFaceParams,
-    ) -> Self {
-        let session = ort::session::SessionBuilder::new(&env)
-            .unwrap()
-            .with_optimization_level(ort::GraphOptimizationLevel::Level2)
-            .unwrap()
-            .with_parallel_execution(true)
-            .unwrap()
-            .with_intra_threads(6)
-            .unwrap()
-            .with_model_from_file(model_path)
-            .unwrap();
+    pub fn from_session(session: Session, params: BlazeFaceParams) -> Self {
         Self { session, params }
     }
 }
@@ -141,15 +125,15 @@ impl FaceDetector for BlazeFace {
         )
         .insert_axis(Axis(0));
 
-        let output_tensors = self.session.run(vec![Value::from_array(
-            self.session.allocator(),
-            &CowArray::from(image).into_dyn(),
-        )?])?;
+        let output_tensors = self
+            .session
+            .run(inputs![Value::from_array(image)?].unwrap())
+            .unwrap();
 
         // Boxes regressions: N box with the format [start x, start y, end x, end y].
-        let boxes: OrtOwnedTensor<f32, _> = output_tensors[0].try_extract()?;
-        let scores: OrtOwnedTensor<f32, _> = output_tensors[1].try_extract()?;
-        let landmarks: OrtOwnedTensor<f32, _> = output_tensors[2].try_extract()?;
+        let boxes = output_tensors[0].try_extract_tensor().unwrap();
+        let scores = output_tensors[1].try_extract_tensor().unwrap();
+        let landmarks = output_tensors[2].try_extract_tensor().unwrap();
         let num_boxes = boxes.view().shape()[1];
 
         let priors = PriorBoxes::new(
@@ -256,7 +240,7 @@ mod tests {
         let drive = GitHubRepository::new();
         let model_path = drive.get_model(&blaze_model).expect("Can't download model")[0].clone();
 
-        let face_detector = BlazeFace::from_file(environment, model_path.to_str().unwrap(), params);
+        let face_detector = BlazeFace::from_file(model_path.to_str().unwrap(), params);
         let mut canvas = sample_array_image.to_rgb8();
         let faces = face_detector
             .detect(sample_array_image.into_dyn().view())

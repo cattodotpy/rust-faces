@@ -1,11 +1,9 @@
-use std::sync::Arc;
-
 use image::{
     imageops::{self, FilterType},
     ImageBuffer, Rgb, RgbImage,
 };
-use ndarray::{s, Array3, Array4, ArrayViewD, Axis, CowArray, Zip};
-use ort::tensor::OrtOwnedTensor;
+use ndarray::{s, Array3, Array4, ArrayBase, ArrayViewD, Axis, Zip};
+use ort::{inputs, session::Session, value::Value};
 
 use crate::{Face, FaceDetector, Nms, Rect, RustFacesResult};
 
@@ -35,9 +33,9 @@ impl Default for MtCnnParams {
 
 /// MtCnn face detector.
 pub struct MtCnn {
-    pnet: ort::Session,
-    rnet: ort::Session,
-    onet: ort::Session,
+    pnet: Session,
+    rnet: Session,
+    onet: Session,
     params: MtCnnParams,
 }
 
@@ -54,17 +52,12 @@ impl MtCnn {
     /// # Returns
     ///
     /// * `MtCnn` - MtCnn face detector.
-    pub fn from_file(
-        env: Arc<ort::Environment>,
-        pnet_path: &str,
-        rnet_path: &str,
-        onet_path: &str,
+    pub fn from_session(
+        pnet: Session,
+        rnet: Session,
+        onet: Session,
         params: MtCnnParams,
     ) -> RustFacesResult<Self> {
-        let pnet = ort::session::SessionBuilder::new(&env)?.with_model_from_file(pnet_path)?;
-        let rnet = ort::session::SessionBuilder::new(&env)?.with_model_from_file(rnet_path)?;
-        let onet = ort::session::SessionBuilder::new(&env)?.with_model_from_file(onet_path)?;
-
         Ok(Self {
             pnet,
             rnet,
@@ -116,13 +109,18 @@ impl MtCnn {
                 |(_n, c, h, w)| (image.get_pixel(w as u32, h as u32)[c] as f32 - 127.5) / 128.0,
             );
 
-            let output_tensors = self.pnet.run(vec![ort::Value::from_array(
-                self.pnet.allocator(),
-                &CowArray::from(image).into_dyn(),
-            )?])?;
+            // let output_tensors = self.pnet.run(vec![ort::Value::from_array(
+            //     self.pnet.allocator(),
+            //     &CowArray::from(image).into_dyn(),
+            // )?])?;
 
-            let box_regressions: OrtOwnedTensor<f32, _> = output_tensors[0].try_extract()?;
-            let scores: OrtOwnedTensor<f32, _> = output_tensors[1].try_extract()?;
+            let output_tensors = self
+                .pnet
+                .run(inputs![Value::from_array(image)?].unwrap())
+                .unwrap();
+
+            let box_regressions = output_tensors[0].try_extract_tensor::<f32>().unwrap();
+            let scores = output_tensors[1].try_extract_tensor::<f32>().unwrap();
 
             let (net_out_width, net_out_height) = {
                 let shape = scores.view().dim();
@@ -217,12 +215,20 @@ impl MtCnn {
     ) -> Result<Vec<Face>, crate::RustFacesError> {
         let mut rnet_faces = Vec::new();
         for (faces, input_tensor) in self.batch_faces(image, proposals, 24) {
-            let output_tensors = self.rnet.run(vec![ort::Value::from_array(
-                self.rnet.allocator(),
-                &CowArray::from(input_tensor).into_dyn(),
-            )?])?;
-            let box_regressions: OrtOwnedTensor<f32, _> = output_tensors[0].try_extract()?;
-            let scores: OrtOwnedTensor<f32, _> = output_tensors[1].try_extract()?;
+            let output_tensors = self
+                .rnet
+                .run(
+                    inputs![Value::from_array(
+                        ArrayBase::<ndarray::OwnedRepr<f32>, _>::from_shape_fn(
+                            (faces.len(), 3, 24, 24),
+                            |(n, c, h, w)| input_tensor[[n, c, h, w]]
+                        )
+                    )?]
+                    .unwrap(),
+                )
+                .unwrap();
+            let box_regressions = output_tensors[0].try_extract_tensor::<f32>().unwrap();
+            let scores = output_tensors[1].try_extract_tensor::<f32>().unwrap();
             let image_width = (image.width() - 1) as f32;
             let image_height = (image.height() - 1) as f32;
 
@@ -279,14 +285,14 @@ impl MtCnn {
     ) -> Result<Vec<Face>, crate::RustFacesError> {
         let mut onet_faces = Vec::new();
         for (faces, input_tensor) in self.batch_faces(image, proposals, 48) {
-            let output_tensors = self.onet.run(vec![ort::Value::from_array(
-                self.onet.allocator(),
-                &CowArray::from(input_tensor).into_dyn(),
-            )?])?;
+            let output_tensors = self
+                .onet
+                .run(inputs![Value::from_array(input_tensor).unwrap()].unwrap())
+                .unwrap();
 
-            let box_regressions: OrtOwnedTensor<f32, _> = output_tensors[0].try_extract()?; // 0
-            let landmarks_regressions: OrtOwnedTensor<f32, _> = output_tensors[1].try_extract()?;
-            let scores: OrtOwnedTensor<f32, _> = output_tensors[2].try_extract()?; // 1
+            let box_regressions = output_tensors[0].try_extract_tensor::<f32>().unwrap(); // 0
+            let landmarks_regressions = output_tensors[1].try_extract_tensor::<f32>().unwrap();
+            let scores = output_tensors[2].try_extract_tensor::<f32>().unwrap(); // 1
             let image_width = (image.width() - 1) as f32;
             let image_height = (image.height() - 1) as f32;
 

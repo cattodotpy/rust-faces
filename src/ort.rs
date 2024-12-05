@@ -1,4 +1,4 @@
-use ort::OrtError;
+use ort::Error as OrtError;
 
 use crate::detection::RustFacesError;
 

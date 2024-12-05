@@ -1,8 +1,6 @@
-use std::sync::Arc;
-
 use ort::{
-    execution_providers::{CUDAExecutionProviderOptions, CoreMLExecutionProviderOptions},
-    ExecutionProvider,
+    execution_providers::{CUDAExecutionProvider, CoreMLExecutionProvider, ExecutionProvider},
+    session::Session,
 };
 
 use crate::{
@@ -111,19 +109,29 @@ impl FaceDetectorBuilder {
     ///
     /// A new face detector.
     pub fn build(&self) -> RustFacesResult<Box<dyn FaceDetector>> {
-        let mut ort_builder = ort::Environment::builder().with_name("RustFaces");
+        let mut ort_builder = Session::builder()
+            .unwrap()
+            .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3)
+            .unwrap()
+            .with_approximate_gelu()
+            .unwrap()
+            .with_intra_threads(self.infer_params.intra_threads.unwrap_or(1))
+            .unwrap()
+            .with_inter_threads(self.infer_params.inter_threads.unwrap_or(1))
+            .unwrap();
 
         ort_builder = match self.infer_params.provider {
             Provider::OrtCuda(device_id) => {
-                let provider = ExecutionProvider::CUDA(CUDAExecutionProviderOptions {
-                    device_id: device_id as u32,
-                    ..Default::default()
-                });
+                let provider = CUDAExecutionProvider::default().with_device_id(device_id);
 
-                if !provider.is_available() {
+                if !provider.is_available().unwrap() {
                     eprintln!("Warning: CUDA is not available. It'll likely use CPU inference.");
                 }
-                ort_builder.with_execution_providers([provider])
+
+                println!("Using CUDA inference with device id: {}", device_id);
+                ort_builder
+                    .with_execution_providers([provider.build()])
+                    .unwrap()
             }
             Provider::OrtVino(_device_id) => {
                 return Err(crate::RustFacesError::Other(
@@ -131,14 +139,18 @@ impl FaceDetectorBuilder {
                 ));
             }
             Provider::OrtCoreMl => {
-                ort_builder.with_execution_providers([ExecutionProvider::CoreML(
-                    CoreMLExecutionProviderOptions::default(),
-                )])
+                let provider = CoreMLExecutionProvider::default();
+
+                if !provider.is_available().unwrap() {
+                    eprintln!("Warning: CoreML is not available. It'll likely use CPU inference.");
+                }
+                ort_builder
+                    .with_execution_providers([provider.build()])
+                    .unwrap()
             }
             _ => ort_builder,
         };
 
-        let env = Arc::new(ort_builder.build()?);
         let repository = GitHubRepository::new();
 
         let model_paths = match &self.open_mode {
@@ -151,22 +163,25 @@ impl FaceDetectorBuilder {
         };
 
         match &self.detector {
-            FaceDetection::BlazeFace640(params) => Ok(Box::new(BlazeFace::from_file(
-                env,
-                &model_paths[0],
+            FaceDetection::BlazeFace640(params) => Ok(Box::new(BlazeFace::from_session(
+                ort_builder.commit_from_file(&model_paths[0]).unwrap(),
                 params.clone(),
             ))),
-            FaceDetection::BlazeFace320(params) => Ok(Box::new(BlazeFace::from_file(
-                env,
-                &model_paths[0],
+            FaceDetection::BlazeFace320(params) => Ok(Box::new(BlazeFace::from_session(
+                ort_builder.commit_from_file(&model_paths[0]).unwrap(),
                 params.clone(),
             ))),
             FaceDetection::MtCnn(params) => Ok(Box::new(
-                MtCnn::from_file(
-                    env,
-                    &model_paths[0],
-                    &model_paths[1],
-                    &model_paths[2],
+                MtCnn::from_session(
+                    ort_builder
+                        .clone()
+                        .commit_from_file(&model_paths[0])
+                        .unwrap(),
+                    ort_builder
+                        .clone()
+                        .commit_from_file(&model_paths[1])
+                        .unwrap(),
+                    ort_builder.commit_from_file(&model_paths[2]).unwrap(),
                     params.clone(),
                 )
                 .unwrap(),
