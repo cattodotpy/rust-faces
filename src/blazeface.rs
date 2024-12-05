@@ -94,6 +94,12 @@ impl BlazeFace {
     ) -> Self {
         let session = ort::session::SessionBuilder::new(&env)
             .unwrap()
+            .with_optimization_level(ort::GraphOptimizationLevel::Level2)
+            .unwrap()
+            .with_parallel_execution(true)
+            .unwrap()
+            .with_intra_threads(6)
+            .unwrap()
             .with_model_from_file(model_path)
             .unwrap();
         Self { session, params }

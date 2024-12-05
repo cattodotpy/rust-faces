@@ -11,7 +11,7 @@ readme = "README.md"
 [dependencies]
 image = "0.24.6"
 ndarray = "0.15.6"
-ort = { version = "1.15.2", features = ["load-dynamic"] }
+ort = { version = "1.15.2", features = ["load-dynamic", "cuda"] }
 nshare = { version = "0.9.0", features = ["ndarray"] }
 imageproc = { version = "0.23.0", optional = true }
 reqwest = { version = "0.11.18", features = ["blocking"] }
@@ -21,7 +21,7 @@ itertools = "0.11.0"
 indicatif = "0.17.5"
 
 [features]
-default = []
+default = ["viz"]
 viz = ["dep:imageproc"]
 
 [dev-dependencies]
