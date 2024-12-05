@@ -5,6 +5,10 @@ use image::{
 use itertools::Itertools;
 use ndarray::{Array3, ArrayViewD, Axis};
 use ort::{inputs, session::Session, value::Value};
+use rayon::{
+    iter::{ParallelBridge, ParallelIterator},
+    vec::IntoIter,
+};
 
 use crate::{
     detection::{FaceDetector, RustFacesResult},
@@ -143,7 +147,7 @@ impl FaceDetector for BlazeFace {
 
         let scale_ratios = (input_width as f32 / ratio, input_height as f32 / ratio);
 
-        let faces = boxes
+        let faces: Vec<_> = boxes
             .view()
             .to_shape((num_boxes, 4))
             .unwrap()
@@ -163,6 +167,7 @@ impl FaceDetector for BlazeFace {
                     .unwrap()
                     .axis_iter(Axis(0)),
             )
+            .par_bridge()
             .filter_map(|(((rect, landmarks), prior), score)| {
                 let score = score[1];
 
@@ -188,7 +193,7 @@ impl FaceDetector for BlazeFace {
                     None
                 }
             })
-            .collect_vec();
+            .collect();
 
         Ok(self.params.nms.suppress_non_maxima(faces))
     }
