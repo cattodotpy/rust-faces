@@ -2,13 +2,9 @@ use image::{
     imageops::{self, FilterType},
     GenericImageView, ImageBuffer, Pixel, Rgb,
 };
-use itertools::Itertools;
-use ndarray::{Array3, ArrayViewD, Axis};
-use ort::{inputs, session::Session, value::Value};
-use rayon::{
-    iter::{ParallelBridge, ParallelIterator},
-    vec::IntoIter,
-};
+use ndarray::{Array3, Axis};
+use ort::{memory::Allocator, session::Session, value::Value};
+use rayon::iter::{ParallelBridge, ParallelIterator};
 
 use crate::{
     detection::{FaceDetector, RustFacesResult},
@@ -95,17 +91,7 @@ impl BlazeFace {
 }
 
 impl FaceDetector for BlazeFace {
-    fn detect(&self, image: ArrayViewD<u8>) -> RustFacesResult<Vec<Face>> {
-        let shape = image.shape().to_vec();
-        let (width, height, _) = (shape[1], shape[0], shape[2]);
-
-        let image = ImageBuffer::<Rgb<u8>, &[u8]>::from_raw(
-            width as u32,
-            height as u32,
-            image.as_slice().unwrap(),
-        )
-        .unwrap();
-
+    fn detect(&self, image: ImageBuffer<Rgb<u8>, Vec<u8>>) -> RustFacesResult<Vec<Face>> {
         let (image, ratio) = resize_and_border(
             &image,
             (
@@ -129,15 +115,29 @@ impl FaceDetector for BlazeFace {
         )
         .insert_axis(Axis(0));
 
-        let output_tensors = self
-            .session
-            .run(inputs![Value::from_array(image)?].unwrap())
-            .unwrap();
+        let mut binding = self.session.create_binding()?;
+        let box_allocator = Allocator::default();
+        let scores_allocator = Allocator::default();
+        let landmark_allocator = Allocator::default();
+
+        binding.bind_output_to_device("boxes", &box_allocator.memory_info())?;
+        binding.bind_output_to_device("scores", &scores_allocator.memory_info())?;
+        binding.bind_output_to_device("landmark", &landmark_allocator.memory_info())?;
+
+        let input = Value::from_array(image)?;
+
+        binding.bind_input("input", &input)?;
+
+        let mut outputs = binding.run()?;
 
         // Boxes regressions: N box with the format [start x, start y, end x, end y].
-        let boxes = output_tensors[0].try_extract_tensor().unwrap();
-        let scores = output_tensors[1].try_extract_tensor().unwrap();
-        let landmarks = output_tensors[2].try_extract_tensor().unwrap();
+        let binding = outputs.remove("boxes").unwrap();
+        let boxes = binding.try_extract_tensor().unwrap();
+        let binding = outputs.remove("scores").unwrap();
+        let scores = binding.try_extract_tensor().unwrap();
+        let binding = outputs.remove("landmark").unwrap();
+        let landmarks = binding.try_extract_tensor().unwrap();
+
         let num_boxes = boxes.view().shape()[1];
 
         let priors = PriorBoxes::new(

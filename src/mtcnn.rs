@@ -2,7 +2,7 @@ use image::{
     imageops::{self, FilterType},
     ImageBuffer, Rgb, RgbImage,
 };
-use ndarray::{s, Array3, Array4, ArrayBase, ArrayViewD, Axis, Zip};
+use ndarray::{s, Array3, Array4, ArrayBase, Axis, Zip};
 use ort::{inputs, session::Session, value::Value};
 
 use crate::{Face, FaceDetector, Nms, Rect, RustFacesResult};
@@ -68,7 +68,7 @@ impl MtCnn {
 
     fn run_proposal_inference(
         &self,
-        image: &ImageBuffer<Rgb<u8>, &[u8]>,
+        image: &ImageBuffer<Rgb<u8>, Vec<u8>>,
     ) -> Result<Vec<Face>, crate::RustFacesError> {
         const PNET_CELL_SIZE: usize = 12;
         const PNET_STRIDE: usize = 2;
@@ -175,7 +175,7 @@ impl MtCnn {
 
     fn batch_faces<'a>(
         &self,
-        image: &'a ImageBuffer<Rgb<u8>, &[u8]>,
+        image: &'a ImageBuffer<Rgb<u8>, Vec<u8>>,
         proposals: &'a [Face],
         input_size: usize,
     ) -> impl Iterator<Item = (&'a [Face], Array4<f32>)> + 'a {
@@ -210,7 +210,7 @@ impl MtCnn {
 
     fn run_refine_net(
         &self,
-        image: &ImageBuffer<Rgb<u8>, &[u8]>,
+        image: &ImageBuffer<Rgb<u8>, Vec<u8>>,
         proposals: &[Face],
     ) -> Result<Vec<Face>, crate::RustFacesError> {
         let mut rnet_faces = Vec::new();
@@ -280,7 +280,7 @@ impl MtCnn {
 
     fn run_optmized_net(
         &self,
-        image: &ImageBuffer<Rgb<u8>, &[u8]>,
+        image: &ImageBuffer<Rgb<u8>, Vec<u8>>,
         proposals: &[Face],
     ) -> Result<Vec<Face>, crate::RustFacesError> {
         let mut onet_faces = Vec::new();
@@ -359,16 +359,7 @@ impl MtCnn {
 }
 
 impl FaceDetector for MtCnn {
-    fn detect(&self, image: ArrayViewD<u8>) -> RustFacesResult<Vec<Face>> {
-        let shape = image.shape().to_vec();
-        let (image_width, image_height) = (shape[1], shape[0]);
-        let image = ImageBuffer::<Rgb<u8>, &[u8]>::from_raw(
-            image_width as u32,
-            image_height as u32,
-            image.as_slice().unwrap(),
-        )
-        .unwrap();
-
+    fn detect(&self, image: ImageBuffer<Rgb<u8>, Vec<u8>>) -> RustFacesResult<Vec<Face>> {
         let proposals = self.run_proposal_inference(&image)?;
         let refined_faces = self.run_refine_net(&image, &proposals)?;
         let optimized_faces = self.run_optmized_net(&image, &refined_faces)?;

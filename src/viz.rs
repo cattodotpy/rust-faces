@@ -12,7 +12,10 @@ impl From<Rect> for imageproc::rect::Rect {
 /// Draws faces on the image.
 pub fn draw_faces<I>(image: &mut I, faces: Vec<Face>)
 where
-    I: GenericImage<Pixel = Rgb<u8>>,
+    I: GenericImage<Pixel = Rgb<u8>>
+        + image::GenericImage
+        + image::GenericImageView
+        + imageproc::drawing::Canvas<Pixel = image::Rgb<u8>>,
 {
     for face in faces {
         imageproc::drawing::draw_hollow_rect_mut(image, face.rect.into(), Rgb([0, 255, 0]));

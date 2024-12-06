@@ -1,5 +1,5 @@
 use crate::Rect;
-use ndarray::ArrayViewD;
+use image::{ImageBuffer, Rgb};
 use thiserror::Error;
 
 /// Error type for RustFaces.
@@ -45,5 +45,5 @@ pub trait FaceDetector: Sync + Send {
     /// # Arguments
     ///
     /// * `image` - Image to detect faces in. Should be in RGB format.
-    fn detect(&self, image: ArrayViewD<u8>) -> RustFacesResult<Vec<Face>>;
+    fn detect(&self, image: ImageBuffer<Rgb<u8>, Vec<u8>>) -> RustFacesResult<Vec<Face>>;
 }

@@ -9,7 +9,7 @@ repository = "https://github.com/rustybuilder/rust-faces"
 readme = "README.md"
 
 [dependencies]
-image = "0.24.6"
+image = "^0.25"
 ndarray = "0.16"
 ort = { version = "=2.0.0-rc.9", features = ["load-dynamic", "cuda"] }
 nshare = { version = "0.9.0", features = ["ndarray"] }

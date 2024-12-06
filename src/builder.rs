@@ -1,5 +1,8 @@
 use ort::{
-    execution_providers::{CUDAExecutionProvider, CoreMLExecutionProvider, ExecutionProvider},
+    execution_providers::{
+        CUDAExecutionProvider, CoreMLExecutionProvider, ExecutionProvider,
+        TensorRTExecutionProvider,
+    },
     session::Session,
 };
 
@@ -33,6 +36,7 @@ pub enum Provider {
     OrtVino(i32),
     /// Apple's Core ML inference.
     OrtCoreMl,
+    OrtTensorRT,
 }
 
 /// Inference parameters.
@@ -114,15 +118,13 @@ impl FaceDetectorBuilder {
             .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3)
             .unwrap()
             .with_approximate_gelu()
-            .unwrap()
-            .with_intra_threads(self.infer_params.intra_threads.unwrap_or(1))
-            .unwrap()
-            .with_inter_threads(self.infer_params.inter_threads.unwrap_or(1))
             .unwrap();
 
         ort_builder = match self.infer_params.provider {
             Provider::OrtCuda(device_id) => {
-                let provider = CUDAExecutionProvider::default().with_device_id(device_id);
+                let provider = CUDAExecutionProvider::default().with_device_id(device_id).with_conv1d_pad_to_nc1d(true).with_conv_algorithm_search(
+                    ort::execution_providers::cuda::CUDAExecutionProviderCuDNNConvAlgoSearch::Heuristic
+                );
 
                 if !provider.is_available().unwrap() {
                     eprintln!("Warning: CUDA is not available. It'll likely use CPU inference.");
@@ -144,6 +146,21 @@ impl FaceDetectorBuilder {
                 if !provider.is_available().unwrap() {
                     eprintln!("Warning: CoreML is not available. It'll likely use CPU inference.");
                 }
+                ort_builder
+                    .with_execution_providers([provider.build()])
+                    .unwrap()
+            }
+            Provider::OrtTensorRT => {
+                let provider = TensorRTExecutionProvider::default();
+
+                if !provider.is_available().unwrap() {
+                    eprintln!(
+                        "Warning: TensorRT is not available. It'll likely use CPU inference."
+                    );
+                }
+
+                println!("Using TensorRT inference");
+
                 ort_builder
                     .with_execution_providers([provider.build()])
                     .unwrap()
