@@ -8,7 +8,7 @@ use crate::imaging::ToArray3;
 
 #[fixture]
 pub fn sample_array_image() -> Array3<u8> {
-    image::io::Reader::open("tests/data/images/faces.jpg")
+    image::ImageReader::open("tests/data/images/faces.jpg")
         .unwrap()
         .decode()
         .unwrap()
@@ -18,7 +18,7 @@ pub fn sample_array_image() -> Array3<u8> {
 
 #[fixture]
 pub fn sample_image() -> RgbImage {
-    image::io::Reader::open("tests/data/images/kate_siegel.jpg")
+    image::ImageReader::open("tests/data/images/kate_siegel.jpg")
         .unwrap()
         .decode()
         .unwrap()

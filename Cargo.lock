@@ -1299,6 +1299,7 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "rawpointer",
+ "rayon",
 ]
 
 [[package]]
@@ -1986,6 +1987,7 @@ dependencies = [
  "ndarray 0.16.1",
  "nshare",
  "ort",
+ "rayon",
  "reqwest",
  "rstest",
  "thiserror",

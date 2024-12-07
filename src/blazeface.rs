@@ -1,7 +1,11 @@
+use std::usize;
+
 use fast_image_resize::{images::Image as FastImage, Resizer};
 use image::{ImageBuffer, Pixel, Rgb};
 use ndarray::{Array3, Axis};
 use ort::{memory::Allocator, session::Session, value::Value};
+use rayon::iter::ParallelIterator;
+use rayon::prelude::*;
 
 use crate::{
     detection::{FaceDetector, RustFacesResult},
@@ -112,7 +116,7 @@ impl BlazeFace {
 
 impl FaceDetector for BlazeFace {
     fn detect(&self, image: ImageBuffer<Rgb<u8>, Vec<u8>>) -> RustFacesResult<Vec<Face>> {
-        let (image, ratio) = resize_and_border(
+        let (src_image, ratio) = resize_and_border(
             &image,
             (
                 self.params.target_size as u32,
@@ -120,20 +124,49 @@ impl FaceDetector for BlazeFace {
             ),
             Rgb([104, 117, 123]),
         );
-        let (input_width, input_height) = image.dimensions();
-        let image = Array3::<f32>::from_shape_fn(
-            (3, input_height as usize, input_width as usize),
-            |(c, y, x)| {
-                match c {
-                    // https://github.com/zineos/blazeface/blob/main/tools/test.py seems to use OpenCV's BGR
-                    0 => image.get_pixel(x as u32, y as u32)[2] as f32 - 104.0,
-                    1 => image.get_pixel(x as u32, y as u32)[1] as f32 - 117.0,
-                    2 => image.get_pixel(x as u32, y as u32)[0] as f32 - 123.0,
-                    _ => unreachable!(),
+        let (input_width, input_height) = src_image.dimensions();
+        // let image = Array3::<f32>::from_shape_fn(
+        //     (3, input_height as usize, input_width as usize),
+        //     |(c, y, x)| {
+        //         match c {
+        //             // https://github.com/zineos/blazeface/blob/main/tools/test.py seems to use OpenCV's BGR
+        //             0 => image.get_pixel(x as u32, y as u32)[2] as f32 - 104.0,
+        //             1 => image.get_pixel(x as u32, y as u32)[1] as f32 - 117.0,
+        //             2 => image.get_pixel(x as u32, y as u32)[0] as f32 - 123.0,
+        //             _ => unreachable!(),
+        //         }
+        //     },
+        // )
+        // .insert_axis(Axis(0));
+
+        let mut image = Array3::<f32>::zeros((3, input_height as usize, input_width as usize))
+            .insert_axis(Axis(0));
+
+        image
+            .axis_iter_mut(Axis(0))
+            .into_par_iter()
+            .enumerate()
+            .for_each(|(c, mut channel)| {
+                for y in 0..input_height as usize {
+                    for x in 0..input_width as usize {
+                        match c {
+                            0 => {
+                                channel[(c, y, x)] =
+                                    src_image.get_pixel(x as u32, y as u32)[2] as f32 - 104.0
+                            }
+                            1 => {
+                                channel[(c, y, x)] =
+                                    src_image.get_pixel(x as u32, y as u32)[1] as f32 - 117.0
+                            }
+                            2 => {
+                                channel[(c, y, x)] =
+                                    src_image.get_pixel(x as u32, y as u32)[0] as f32 - 123.0
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
                 }
-            },
-        )
-        .insert_axis(Axis(0));
+            });
 
         let mut binding = self.session.create_binding()?;
         let box_allocator = Allocator::default();
