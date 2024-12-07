@@ -1,6 +1,6 @@
 use image::{
     imageops::{self, FilterType},
-    ImageBuffer, Rgb, RgbImage,
+    ImageBuffer, Rgba, RgbaImage,
 };
 use ndarray::{s, Array3, Array4, ArrayBase, Axis, Zip};
 use ort::{inputs, session::Session, value::Value};
@@ -68,7 +68,7 @@ impl MtCnn {
 
     fn run_proposal_inference(
         &self,
-        image: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+        image: &ImageBuffer<Rgba<u8>, Vec<u8>>,
     ) -> Result<Vec<Face>, crate::RustFacesError> {
         const PNET_CELL_SIZE: usize = 12;
         const PNET_STRIDE: usize = 2;
@@ -175,7 +175,7 @@ impl MtCnn {
 
     fn batch_faces<'a>(
         &self,
-        image: &'a ImageBuffer<Rgb<u8>, Vec<u8>>,
+        image: &'a ImageBuffer<Rgba<u8>, Vec<u8>>,
         proposals: &'a [Face],
         input_size: usize,
     ) -> impl Iterator<Item = (&'a [Face], Array4<f32>)> + 'a {
@@ -184,7 +184,7 @@ impl MtCnn {
             let mut input_tensor = Array4::zeros((proposal_batch.len(), 3, input_size, input_size));
             for (n, face) in proposal_batch.iter().enumerate() {
                 let face_image =
-                    RgbImage::from_fn(face.rect.width as u32, face.rect.height as u32, |x, y| {
+                    RgbaImage::from_fn(face.rect.width as u32, face.rect.height as u32, |x, y| {
                         image
                             .get_pixel(face.rect.x as u32 + x, face.rect.y as u32 + y)
                             .to_owned()
@@ -210,7 +210,7 @@ impl MtCnn {
 
     fn run_refine_net(
         &self,
-        image: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+        image: &ImageBuffer<Rgba<u8>, Vec<u8>>,
         proposals: &[Face],
     ) -> Result<Vec<Face>, crate::RustFacesError> {
         let mut rnet_faces = Vec::new();
@@ -280,7 +280,7 @@ impl MtCnn {
 
     fn run_optmized_net(
         &self,
-        image: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+        image: &ImageBuffer<Rgba<u8>, Vec<u8>>,
         proposals: &[Face],
     ) -> Result<Vec<Face>, crate::RustFacesError> {
         let mut onet_faces = Vec::new();
@@ -359,7 +359,7 @@ impl MtCnn {
 }
 
 impl FaceDetector for MtCnn {
-    fn detect(&self, image: ImageBuffer<Rgb<u8>, Vec<u8>>) -> RustFacesResult<Vec<Face>> {
+    fn detect(&self, image: &ImageBuffer<Rgba<u8>, Vec<u8>>) -> RustFacesResult<Vec<Face>> {
         let proposals = self.run_proposal_inference(&image)?;
         let refined_faces = self.run_refine_net(&image, &proposals)?;
         let optimized_faces = self.run_optmized_net(&image, &refined_faces)?;

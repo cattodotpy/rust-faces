@@ -1,7 +1,7 @@
 use std::usize;
 
 use fast_image_resize::{images::Image as FastImage, Resizer};
-use image::{ImageBuffer, Pixel, Rgb};
+use image::{ImageBuffer, Pixel, Rgb, Rgba};
 use ndarray::{Array3, Axis};
 use ort::{memory::Allocator, session::Session, value::Value};
 use rayon::iter::ParallelIterator;
@@ -17,7 +17,7 @@ use crate::{
 pub type Image<P> = ImageBuffer<P, Vec<<P as Pixel>::Subpixel>>;
 
 fn resize_and_border(
-    src_image: &Image<Rgb<u8>>,
+    src_image: &Image<Rgba<u8>>,
     output_size: (u32, u32),
     border_color: Rgb<u8>,
 ) -> (Image<Rgb<u8>>, f32) {
@@ -115,7 +115,7 @@ impl BlazeFace {
 }
 
 impl FaceDetector for BlazeFace {
-    fn detect(&self, image: ImageBuffer<Rgb<u8>, Vec<u8>>) -> RustFacesResult<Vec<Face>> {
+    fn detect(&self, image: &ImageBuffer<Rgba<u8>, Vec<u8>>) -> RustFacesResult<Vec<Face>> {
         let (src_image, ratio) = resize_and_border(
             &image,
             (
@@ -125,19 +125,6 @@ impl FaceDetector for BlazeFace {
             Rgb([104, 117, 123]),
         );
         let (input_width, input_height) = src_image.dimensions();
-        // let image = Array3::<f32>::from_shape_fn(
-        //     (3, input_height as usize, input_width as usize),
-        //     |(c, y, x)| {
-        //         match c {
-        //             // https://github.com/zineos/blazeface/blob/main/tools/test.py seems to use OpenCV's BGR
-        //             0 => image.get_pixel(x as u32, y as u32)[2] as f32 - 104.0,
-        //             1 => image.get_pixel(x as u32, y as u32)[1] as f32 - 117.0,
-        //             2 => image.get_pixel(x as u32, y as u32)[0] as f32 - 123.0,
-        //             _ => unreachable!(),
-        //         }
-        //     },
-        // )
-        // .insert_axis(Axis(0));
 
         let mut image = Array3::<f32>::zeros((3, input_height as usize, input_width as usize))
             .insert_axis(Axis(0));
