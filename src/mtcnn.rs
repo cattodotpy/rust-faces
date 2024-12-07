@@ -372,13 +372,15 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+    #[cfg(feature = "viz")]
+    use crate::viz;
     use crate::{
         imaging::ToRgb8,
         model_repository::{GitHubRepository, ModelRepository},
         mtcnn::MtCnn,
         testing::{output_dir, sample_array_image},
-        viz,
     };
+
     use ndarray::Array3;
     use rstest::rstest;
     use std::sync::Arc;

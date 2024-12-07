@@ -1,10 +1,7 @@
-use image::{
-    imageops::{self, FilterType},
-    GenericImageView, ImageBuffer, Pixel, Rgb,
-};
+use fast_image_resize::{images::Image as FastImage, Resizer};
+use image::{ImageBuffer, Pixel, Rgb};
 use ndarray::{Array3, Axis};
 use ort::{memory::Allocator, session::Session, value::Value};
-use rayon::iter::{ParallelBridge, ParallelIterator};
 
 use crate::{
     detection::{FaceDetector, RustFacesResult},
@@ -15,16 +12,12 @@ use crate::{
 
 pub type Image<P> = ImageBuffer<P, Vec<<P as Pixel>::Subpixel>>;
 
-fn resize_and_border<I: GenericImageView>(
-    image: &I,
+fn resize_and_border(
+    src_image: &Image<Rgb<u8>>,
     output_size: (u32, u32),
-    border_color: I::Pixel,
-) -> (Image<I::Pixel>, f32)
-where
-    I::Pixel: 'static,
-    <I::Pixel as Pixel>::Subpixel: 'static,
-{
-    let (input_width, input_height) = image.dimensions();
+    border_color: Rgb<u8>,
+) -> (Image<Rgb<u8>>, f32) {
+    let (input_width, input_height) = src_image.dimensions();
     let (output_width, output_height) = output_size;
     let ratio = (output_width as f32 / input_width as f32)
         .min(output_height as f32 / input_height as f32)
@@ -34,12 +27,27 @@ where
         (input_width as f32 * ratio).round() as i32,
         (input_height as f32 * ratio).round() as i32,
     );
-    let resized = imageops::resize(
-        image,
+    let mut resized: FastImage = FastImage::new(
         resize_width as u32,
         resize_height as u32,
-        FilterType::Nearest,
+        fast_image_resize::PixelType::U8x3,
     );
+
+    let mut resizer = Resizer::new();
+
+    resizer
+        .resize(
+            &FastImage::from_vec_u8(
+                input_width,
+                input_height,
+                src_image.to_vec(),
+                fast_image_resize::PixelType::U8x3,
+            )
+            .unwrap(),
+            &mut resized,
+            None,
+        )
+        .unwrap();
 
     let (left, right, top, bottom) = {
         let (x_pad, y_pad) = (
@@ -55,7 +63,19 @@ where
     };
 
     (
-        make_border(&resized, top, bottom, left, right, border_color),
+        make_border(
+            &ImageBuffer::<Rgb<u8>, Vec<u8>>::from_vec(
+                resize_width as u32,
+                resize_height as u32,
+                resized.into_vec(),
+            )
+            .unwrap(),
+            top,
+            bottom,
+            left,
+            right,
+            border_color,
+        ),
         ratio,
     )
 }
@@ -167,7 +187,6 @@ impl FaceDetector for BlazeFace {
                     .unwrap()
                     .axis_iter(Axis(0)),
             )
-            .par_bridge()
             .filter_map(|(((rect, landmarks), prior), score)| {
                 let score = score[1];
 

@@ -1,14 +1,12 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use rust_faces::{
     BlazeFaceParams, FaceDetection, FaceDetectorBuilder, InferParams, MtCnnParams, Provider,
-    ToArray3,
 };
 
 fn criterion_benchmark(c: &mut Criterion) {
     let image = image::open("tests/data/images/faces.jpg")
         .expect("Can't open test image.")
-        .into_rgb8()
-        .into_array3();
+        .into_rgb8();
 
     for (name, detection, provider) in vec![
         (
@@ -51,7 +49,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             .build()
             .expect("Fail to load the face detector.");
         c.bench_function(name, |b| {
-            b.iter(|| face_detector.detect(image.view().into_dyn()).unwrap())
+            b.iter(|| face_detector.detect(image.clone()).unwrap())
         });
     }
 }

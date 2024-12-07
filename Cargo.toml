@@ -19,10 +19,11 @@ home = "0.5.5"
 thiserror = "1.0.40"
 itertools = "0.11.0"
 indicatif = "0.17.5"
-rayon = "1.10.0"
+fast_image_resize = { version = "5.0.0", features = ["rayon", "image"] }
+bytemuck = "1.20.0"
 
 [features]
-default = ["viz"]
+default = []
 viz = ["dep:imageproc"]
 
 [dev-dependencies]
